@@ -6,43 +6,139 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
-func main(){
+func main() {
+
 	fmt.Println("=========================================")
-	fmt.Println("	mini-edr 경량 보안 에이전트 구동(1단계)   ") 
+	fmt.Println("   mini-edr Collector 테스트")
 	fmt.Println("=========================================")
 
-	// [1] 추적을 위한 경로 인자로 함수 실행
+	// ---------------------------------------------------------
+	// 1. TailEngine 생성
+	// ---------------------------------------------------------
 	tailEngine := collector.NewTailEngine("/var/log/audit/audit.log")
 
-	// [2] tailEngine 실행
+	// ---------------------------------------------------------
+	// 2. audit.log 실시간 추적 시작
+	// ---------------------------------------------------------
 	if err := tailEngine.Start(); err != nil {
-		fmt.Printf("에이전트 초기화 실패: %v\n", err)
-		return 
+		fmt.Printf("TailEngine 시작 실패 : %v\n", err)
+		return
 	}
 
-	// [3] 실시간으로 떨어지는 라인을 화면에 바인딩하는 임시 모니터링 고루틴 작동
-	go func(){
-		for line := range tailEngine.NextLine() {
-			fmt.Printf("[Raw Line 캡쳐] %s\n", line)
+	// ---------------------------------------------------------
+	// 3. Audit Collector 생성
+	// ---------------------------------------------------------
+	auditCollector := collector.NewAuditdCollector(tailEngine)
+
+	// ---------------------------------------------------------
+	// 4. Audit Collector 시작
+	// ---------------------------------------------------------
+	if err := auditCollector.Start(); err != nil {
+		fmt.Printf("Collector 시작 실패 : %v\n", err)
+		return
+	}
+
+	// ---------------------------------------------------------
+	// 5. 조립 완료된 AuditLogGroup 출력
+	// ---------------------------------------------------------
+	go func() {
+
+		for group := range auditCollector.ReadyGroups() {
+
+			fmt.Println()
+			fmt.Println("===================================")
+			fmt.Println("      Audit Event Complete")
+			fmt.Println("===================================")
+
+			fmt.Printf("%+v\n", group)
+
+			fmt.Println("-----------------------------------")
+
+			fmt.Println("AuditID :", group.ID)
+			fmt.Println("Key     :", group.Key)
+
+			if group.Syscall != nil {
+				fmt.Println()
+				fmt.Println("[SYSCALL]")
+				fmt.Println("PID     :", group.Syscall.PID)
+				fmt.Println("PPID    :", group.Syscall.PPID)
+				fmt.Println("UID     :", group.Syscall.UID)
+				fmt.Println("Command :", group.Syscall.Command)
+				fmt.Println("Exe     :", group.Syscall.Exe)
+			}
+
+			if group.Execve != nil {
+				fmt.Println()
+				fmt.Println("[EXECVE]")
+				fmt.Println("Argc :", group.Execve.Argc)
+				fmt.Println("Args :", group.Execve.Args)
+			}
+
+			if group.Cwd != nil {
+				fmt.Println()
+				fmt.Println("[CWD]")
+				fmt.Println("Directory :", group.Cwd.Directory)
+			}
+
+			if len(group.Paths) > 0 {
+				fmt.Println()
+				fmt.Println("[PATH]")
+
+				for _, path := range group.Paths {
+					fmt.Println("----------------------------")
+					fmt.Println("Name     :", path.Name)
+					fmt.Println("Item     :", path.Item)
+					fmt.Println("NameType :", path.NameType)
+				}
+			}
+
+			if group.ProcTitle != nil {
+				fmt.Println()
+				fmt.Println("[PROCTITLE]")
+				fmt.Println("Title :", group.ProcTitle.Title)
+			}
+
+			if group.SockAddr != nil {
+				fmt.Println()
+				fmt.Println("[SOCKADDR]")
+				fmt.Println("Address :", group.SockAddr.Address)
+			}
+
+			fmt.Println("===================================")
+			fmt.Println()
+
 		}
+
 	}()
 
-	// [4] Linux 표준 종료 시그널(Ctrl + C, kill) 감지용 가드 배치
+	// ---------------------------------------------------------
+	// 6. 종료 시그널 대기
+	// ---------------------------------------------------------
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("-> 에이전트 실시간 동작 중... 종료 시 Ctrl + C")
-	<- sigChan
+	fmt.Println("Collector 실행 중...")
+	fmt.Println("명령어를 실행해보세요. (ls, cat, ping 등)")
+	fmt.Println("종료 : Ctrl + C")
 
-	// [5] 종료 시 수거
-	fmt.Println("\n -> 에이전트 명령 감지")
+	<-sigChan
+
+	// ---------------------------------------------------------
+	// 7. Collector 종료
+	// ---------------------------------------------------------
+	fmt.Println()
+	fmt.Println("Collector 종료 중...")
+
+	auditCollector.Stop()
+
+	// ---------------------------------------------------------
+	// 8. TailEngine 종료
+	// ---------------------------------------------------------
 	tailEngine.Stop()
 
-	time.Sleep(500 * time.Millisecond)
+	fmt.Println("모든 Collector 종료 완료")
 	fmt.Println("=========================================")
-	fmt.Println("	mini-edr 경량 보안 에이전트 종료(1단계)   ") 
-	fmt.Println("=========================================")
+
 }
