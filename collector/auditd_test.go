@@ -116,42 +116,48 @@ func TestParseSyscallRecord(t *testing.T) {
 }
 
 func TestParseExecveRecord(t *testing.T) {
-
 	c := &AuditdCollector{}
 
 	line := `type=EXECVE argc=2 a0="ls" a1="-al"`
 
 	record := c.parseExecveRecord(line)
 
+	if record == nil {
+		t.Fatal("record is nil")
+	}
+
 	if record.Argc != 2 {
-		t.Fatal(record.Argc)
+		t.Fatalf("expected argc=2, got %d", record.Argc)
+	}
+
+	if len(record.Args) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(record.Args))
 	}
 
 	if record.Args[0] != "ls" {
-		t.Fatal(record.Args)
+		t.Fatalf("expected a0=ls, got %q", record.Args[0])
 	}
 
 	if record.Args[1] != "-al" {
-		t.Fatal(record.Args)
+		t.Fatalf("expected a1=-al, got %q", record.Args[1])
 	}
 }
 
 func TestIsReadyToAssemble(t *testing.T) {
-
 	c := &AuditdCollector{}
 
 	group := &AuditLogGroup{
 		Key: "process_create",
 
-		Syscall: &SyscallRecord{},
-		Execve: &ExecveRecord{},
-		Cwd: &CwdRecord{},
-		Paths: []*PathRecord{},
+		Syscall:   &SyscallRecord{},
+		Execve:    &ExecveRecord{},
+		Cwd:       &CwdRecord{},
+		Paths:     []*PathRecord{{}}, // PATH 하나 존재
 		ProcTitle: &ProcTitleRecord{},
 	}
 
 	if !c.isReadyToAssemble(group) {
-		t.Fatal("should be ready")
+		t.Fatal("expected group to be ready")
 	}
 }
 

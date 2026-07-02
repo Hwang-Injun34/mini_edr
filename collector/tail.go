@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/hpcloud/tail"
@@ -14,6 +15,7 @@ type TailEngine struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	lineChan chan string // 추출된 한 줄을 외부로 전달할 논블로킹 채널 통로
+	errChan chan error 
 }
 
 
@@ -28,6 +30,7 @@ func NewTailEngine(logPath string) *TailEngine {
 		ctx:      ctx,
 		cancel:   cancel,
 		lineChan: make(chan string, 1000),  // 버퍼 크기 임시 지정
+		errChan: make(chan error, 10),
 		}
 }
 
@@ -35,6 +38,12 @@ func NewTailEngine(logPath string) *TailEngine {
 //	NextLine은 하부 엔진에서 한 줄씩 꺼내 갈 수 있도록 수신 채널 제공한다.
 func (t *TailEngine) NextLine() <-chan string {
 	return t.lineChan
+}
+
+
+//	Errors는 내부 에러를 전달하기 위한 에러 수신용 채널을 제공한다. 
+func (t *TailEngine) Errors() <- chan error {
+	return t.errChan
 }
 
 
@@ -55,7 +64,8 @@ func (t *TailEngine) Stop() {
 	t.cancel()
 	t.wg.Wait()
 	close(t.lineChan)
-	fmt.Println("[TailEngine] 실시간 파일 디스크립터가 안전하게 닫혔습니다.")
+	close(t.errChan)
+	fmt.Println("[TailEngine] 실시간 파일 디스크립터 및 에러 파이프라인이 안전하게 닫혔습니다.")
 }
 
 
@@ -75,7 +85,21 @@ func (t *TailEngine) runLoop() {
 
 	tailStream, err := tail.TailFile(t.logPath, config)
 	if err != nil {
-		fmt.Printf("[Error] %s 추적 엔진 가동 실패: %v\n", t.logPath, err)
+		var wrappedErr error = ErrLogFileMissing
+		if os.IsPermission(err) {
+			wrappedErr = ErrPermission
+		}
+
+		select {
+			case t.errChan <- &EDRError{
+				Stage: StageTail, 
+				Component: "runLoop.TailFile",
+				Err: wrappedErr,
+				Detail: fmt.Sprintf("대상 로그 경로: %s | 원본 오류: %v", t.logPath, err),
+			}:
+			default:
+				fmt.Printf("[Crit-Error] %s 가동 실패 메일 전달 누수 발생.\n", t.logPath)
+		}
 		return
 	}
 
@@ -94,8 +118,16 @@ func (t *TailEngine) runLoop() {
 			select {
 			case t.lineChan <- line.Text: // 낱개 문자열을 가공 없이 채널로 송신
 			default:
-				// 채널이 꽉 찬 긴박한 상황일 경우, 저사양 시스템 자원 고갈을 막기 위해 디버그 출력 유도
-				fmt.Println("[Drop Warning] 원시 로그 수신 버퍼 가득 참.")
+				select {
+					case t.errChan <- &EDRError{
+						Stage: StageTail,
+						Component: "runLoop.ChannelWrite",
+						Err: ErrBufferOverflow,
+						Detail:    fmt.Sprintf("1단계 수집 채널 최대 제한 수량(1000) 초과 유실 위기. 원문: %.30s...", line.Text),
+					}:
+					default:
+						fmt.Println("[Drop Warning] 원시 로그 수신 버퍼 및 에러 채널 동시 풀(Full) 상태.")
+				}
 			}
 		}
 	}
