@@ -1,182 +1,108 @@
 package main
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"mini_edr/collector"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
+	"sync"
 	"syscall"
+
+	"mini_edr/collector"
+	"mini_edr/dispatcher"
+	"mini_edr/rule"
 )
 
 func main() {
-	fmt.Println("=========================================")
-	fmt.Println("   mini-edr Collector 및 에러 텔레메트리 테스트")
-	fmt.Println("=========================================")
+	fmt.Println("==================================================")
+	fmt.Println("        mini-edr 실시간 침해 사고 대응 엔진 가동")
+	fmt.Println("==================================================")
 
-	// ---------------------------------------------------------
-	// 1. TailEngine 생성
-	// ---------------------------------------------------------
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// 1. 인프라 레이어 셋업 (1, 2단계 수집기)
 	tailEngine := collector.NewTailEngine("/var/log/audit/audit.log")
-
-	// ---------------------------------------------------------
-	// 2. audit.log 실시간 추적 시작
-	// ---------------------------------------------------------
-	if err := tailEngine.Start(); err != nil {
-		fmt.Printf("TailEngine 시작 실패 : %v\n", err)
-		return
-	}
-
-	// ---------------------------------------------------------
-	// 3. Audit Collector 생성
-	// ---------------------------------------------------------
+	_ = tailEngine.Start()
 	auditCollector := collector.NewAuditdCollector(tailEngine)
+	_ = auditCollector.Start()
 
-	// ---------------------------------------------------------
-	// 4. Audit Collector 시작
-	// ---------------------------------------------------------
-	if err := auditCollector.Start(); err != nil {
-		fmt.Printf("Collector 시작 실패 : %v\n", err)
-		return
+	// 2. 가공 레이어 셋업 (3단계 디스패처)
+	eventDispatcher := dispatcher.NewEventDispatcher(auditCollector.ReadyGroups())
+	eventDispatcher.Start(ctx, &wg)
+
+	// 3. 분석 레이어 셋업 및 8대 규칙 로드 (4단계 룰 엔진)
+	ruleEngine := rule.NewRuleEngine()
+	
+	// 실행 중인 main.go 파일의 물리적 절대 경로를 런타임 추적
+	_, currentFile, _, _ := runtime.Caller(0)
+	// cmd/agent/main.go 에서 두 단계 위로 올라가 프로젝트 루트 경로 확보
+	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+	rulesDir := filepath.Join(projectRoot, "rules")
+
+	// 컴파일 타임 샌드박스 경로 확인 로그
+	fmt.Printf("[System] 동적 감지된 규칙 저장소 절대 경로: %s\n", rulesDir)
+
+	// 동적으로 추출된 룰 디렉터리 경로를 기반으로 파일 목록 매핑
+	ruleFiles := []string{
+		filepath.Join(rulesDir, "processCreation.json"),
+		filepath.Join(rulesDir, "fileCreation.json"),
+		filepath.Join(rulesDir, "fileDeletetion.json"),
+		filepath.Join(rulesDir, "networkConnection.json"),
+		filepath.Join(rulesDir, "privilegeEscalation.json"),
+		filepath.Join(rulesDir, "processAccess.json"),
+		filepath.Join(rulesDir, "persistenceRule_1.json"),
+		filepath.Join(rulesDir, "persistenceRule_2.json"),
 	}
 
-	// ---------------------------------------------------------
-	// [★ 추가] 5. 비동기 에러 통합 모니터링 루프 가동
-	// ---------------------------------------------------------
-	// 1단계(Tail)와 2단계(조립)의 백그라운드 에러 채널을 관측하는 통합 감시 고루틴입니다.
+	for _, file := range ruleFiles {
+		if err := ruleEngine.LoadRuleFile(file); err != nil {
+			fmt.Printf("룰 파일 적재 누수 발생 [%s]: %v\n", filepath.Base(file), err)
+		}
+	}
+
+	// 4. 파이프라인 결합: [3단계 배출구] ──> [4단계 룰 엔진 입력구] 도킹!
+	ruleEngine.Start(ctx, &wg, eventDispatcher.ParsedEvents())
+
+	// 5. 위협 얼럿 출력 고루틴 백그라운드 구동
+	go func() {
+		for alertEvent := range ruleEngine.DetectionAlerts() {
+			fmt.Println("\n==================================================")
+			fmt.Printf(" 침해 지표 실시간 탐지 레이더 알림\n")
+			fmt.Printf("├─ 탐지 시그니처: %s\n", alertEvent.AuditKey)
+			fmt.Printf("├─ 침해 원인 프로세스: %s (PID: %d)\n", alertEvent.ProcessName, alertEvent.PID)
+			fmt.Printf("├─ 악성 공격 명령행: %s\n", alertEvent.CommandLine)
+			fmt.Printf("└─ 탐지 매칭 자원 타깃: %s\n", alertEvent.TargetFile)
+			fmt.Println("==================================================")
+		}
+	}()
+
+	// 6. 비동기 오류 알림 제어판 도킹 (기존 로직 동일)
 	go func() {
 		for {
 			select {
-			// 1단계 엔진의 에러 수신
-			case err, ok := <-tailEngine.Errors():
-				if !ok {
-					return
-				}
-				handlePipelineError(err)
-
-			// 2단계 조립기의 에러 수신
-			case err, ok := <-auditCollector.Errors():
-				if !ok {
-					return
-				}
-				handlePipelineError(err)
+			case err := <-tailEngine.Errors():      if err != nil { fmt.Printf("[Err] %v\n", err) }
+			case err := <-auditCollector.Errors():  if err != nil { fmt.Printf("[Err] %v\n", err) }
+			case err := <-eventDispatcher.Errors(): if err != nil { fmt.Printf("[Err] %v\n", err) }
+			case <-ctx.Done(): return
 			}
 		}
 	}()
 
-	// ---------------------------------------------------------
-	// 6. 조립 완료된 AuditLogGroup 출력 (정상 흐름)
-	// ---------------------------------------------------------
-	go func() {
-		for group := range auditCollector.ReadyGroups() {
-			fmt.Println()
-			fmt.Println("===================================")
-			fmt.Println("      Audit Event Complete")
-			fmt.Println("===================================")
-
-			fmt.Printf("%+v\n", group)
-			fmt.Println("-----------------------------------")
-			fmt.Println("AuditID :", group.ID)
-			fmt.Println("Key     :", group.Key)
-
-			if group.Syscall != nil {
-				fmt.Println()
-				fmt.Println("[SYSCALL]")
-				fmt.Println("PID     :", group.Syscall.PID)
-				fmt.Println("PPID    :", group.Syscall.PPID)
-				fmt.Println("UID     :", group.Syscall.UID)
-				fmt.Println("Command :", group.Syscall.Command)
-				fmt.Println("Exe     :", group.Syscall.Exe)
-			}
-
-			if group.Execve != nil {
-				fmt.Println()
-				fmt.Println("[EXECVE]")
-				fmt.Println("Argc :", group.Execve.Argc)
-				fmt.Println("Args :", group.Execve.Args)
-			}
-
-			if group.Cwd != nil {
-				fmt.Println()
-				fmt.Println("[CWD]")
-				fmt.Println("Directory :", group.Cwd.Directory)
-			}
-
-			if len(group.Paths) > 0 {
-				fmt.Println()
-				fmt.Println("[PATH]")
-				for _, path := range group.Paths {
-					fmt.Println("----------------------------")
-					fmt.Println("Name     :", path.Name)
-					fmt.Println("Item     :", path.Item)
-					fmt.Println("NameType :", path.NameType)
-				}
-			}
-
-			if group.ProcTitle != nil {
-				fmt.Println()
-				fmt.Println("[PROCTITLE]")
-				fmt.Println("Title :", group.ProcTitle.Title)
-			}
-
-			if group.SockAddr != nil {
-				fmt.Println()
-				fmt.Println("[SOCKADDR]")
-				fmt.Println("Address :", group.SockAddr.Address)
-			}
-
-			fmt.Println("===================================")
-			fmt.Println()
-		}
-	}()
-
-	// ---------------------------------------------------------
-	// 7. 종료 시그널 대기
-	// ---------------------------------------------------------
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	fmt.Println("Collector 실행 중...")
-	fmt.Println("명령어를 실행해보세요. (ls, cat, ping 등)")
-	fmt.Println("종료 : Ctrl + C")
-
+	fmt.Println("\n-> 에이전트 분석 파이프라인 완공 완료. 실시간 방어 중...")
 	<-sigChan
 
-	// ---------------------------------------------------------
-	// 8. Collector 및 TailEngine 순차 종료
-	// ---------------------------------------------------------
-	fmt.Println()
-	fmt.Println("Collector 종료 중...")
+	// 7. 자원 역순 해제 및 클렌징 종료
+	fmt.Println("\n-> 보안 에이전트 셧다운 절차를 개시합니다...")
+	cancel()
 	auditCollector.Stop()
 	tailEngine.Stop()
-
-	fmt.Println("모든 Collector 종료 완료")
-	fmt.Println("=========================================")
-}
-
-// --------------------------------------------------------------------
-// [★ 추가] errors.Is 및 errors.As를 활용한 에러 정밀 분석 핸들러
-// --------------------------------------------------------------------
-func handlePipelineError(err error) {
-	fmt.Println("\n [EDR Telemetry Alert] 내부 오작동 감지")
-
-	// 1. errors.Is를 통한 "원인(본질)" 판별 기법 가동
-	if errors.Is(err, collector.ErrPermission) {
-		fmt.Println("[해결방안] 권한 부족! 에이전트를 반드시 'sudo' 권한으로 기동하세요.")
-	} else if errors.Is(err, collector.ErrLogFileMissing) {
-		fmt.Println("[해결방안] 리눅스 auditd 서비스가 활성화되어 있는지 확인하세요.")
-	} else if errors.Is(err, collector.ErrBufferOverflow) {
-		fmt.Println("[위험] 현재 하행 파이프라인 병목으로 자원 유실 위기입니다.")
-	}
-
-	// 2. errors.As를 통한 "컨텍스트 데이터(구조체)" 강제 적출
-	var edrErr *collector.EDRError
-	if errors.As(err, &edrErr) {
-		fmt.Printf("├─ 발생 단계: %s\n", edrErr.Stage)
-		fmt.Printf("├─ 오작동 컴포넌트: %s\n", edrErr.Component)
-		fmt.Printf("└─ 디버깅 상세노트: %s\n", edrErr.Detail)
-	} else {
-		fmt.Printf("└─ 알 수 없는 시스템 오류: %v\n", err)
-	}
-	fmt.Println()
+	wg.Wait()
+	fmt.Println("==================================================")
+	fmt.Println("        mini-edr 에이전트가 안전하게 종료되었습니다.")
+	fmt.Println("==================================================")
 }
