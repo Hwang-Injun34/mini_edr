@@ -1,0 +1,32 @@
+{
+  "groups": {
+    "SystemService": [
+        "/etc/systemd/system/*.service",
+        "/lib/systemd/system/*.service"
+    ],
+
+    "UserService": [
+        "~./config/systemd/user/*.service"
+    ]
+    
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0253_AN0701",
+      "name": "Detection of Systemd Service Creation or Modification on Linux ",
+      "description": "시스템 또는 사용자 수준의 디렉터리에서 .service 유닛 파일이 생성되거나 수정되는 행위를 탐지한다.",
+      "event_type":"file_create",
+      "syscall": "creat",
+
+      "conditions": {
+        "path": [
+            "SystemService",
+            "UserService"
+        ]
+      }
+    }
+  ]
+}
+

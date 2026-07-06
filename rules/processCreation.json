@@ -1,0 +1,115 @@
+{
+  "groups": {
+
+    "Shell": [
+      "/bin/bash",
+      "/bin/sh",
+      "/bin/dash",
+      "/bin/ash",
+      "/bin/busybox"
+    ],
+
+    "WebServer": [
+      "/usr/sbin/apache2",
+      "/usr/sbin/httpd",
+      "/usr/sbin/nginx",
+      "/usr/sbin/php-fpm"
+    ],
+
+    "RemoteSession": [
+      "/usr/sbin/sshd"
+    ],
+
+    "Download": {
+      "command": [
+        "curl",
+        "wget",
+        "ftp",
+        "scp",
+        "tftp"
+      ]
+    },
+
+    "SystemDiscovery": {
+      "command": [
+        "whoami",
+        "hostname",
+        "id",
+        "uname",
+        "pwd"
+      ]
+    },
+
+    "NetworkDiscovery": {
+      "command": [
+        "ping",
+        "ip",
+        "ifconfig",
+        "netstat",
+        "ss"
+      ]
+    },
+
+    "ReverseShell": {
+      "command": [
+        "nc",
+        "ncat",
+        "telnet",
+        "socat"
+      ],
+
+      "option": [
+        "-e",
+        "-c"
+      ],
+
+      "shell": [
+        "/bin/bash",
+        "/bin/sh",
+        "bash",
+        "sh"
+      ],
+
+      "network": [
+        "/dev/tcp"
+      ]
+    },
+
+    "Persistence": {
+      "command": [
+        "crontab",
+        "systemctl",
+        "service"
+      ]
+    }
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0384_AN1081",
+      "name": "Behavioral Detection of Unix Shell Execution",
+      "description": "프로세스 생성 이벤트를 기반으로 의심스러운 Unix Shell 실행 및 그에 따른 악성 활동을 탐지한다.",
+      "event_type": "process_create",
+      "syscall": ["execve", "execveat"],
+
+      "conditions": {
+        "exe": "Shell",
+        "ppid_exe": [
+          "WebServer",
+          "RemoteSession"
+        ],
+
+        "argv": {
+          "download": "Download",
+          "system_discovery": "SystemDiscovery",
+          "network_discovery": "NetworkDiscovery",
+          "reverse_shell": "ReverseShell",
+          "persistence": "Persistence"
+        }
+      }
+    }
+
+  ]
+}
+

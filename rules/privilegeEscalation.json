@@ -1,0 +1,30 @@
+{
+  "groups": {
+
+    "RootUser": [
+      0
+    ],
+
+    "RootGroup": [
+      0
+    ]
+
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0110_AN0307",
+      "name": " Setuid/Segid Privilege Abuse Detection(Linux/macOS)",
+      "description": "Chmod 명령으로 Setuid 또는 Setgid 비트를 설정한 이후, 실제 사용자 ID(UID)와 유효 사용자(EUID)가 서로 다른 권한으로 프로세스가 실행되는 행위를 연계 분석하여 탐지한다.",
+      "event_type": "privilege_escalation",
+      "syscall": ["setuid", "setgid"],
+
+      "conditions": {
+        "euid": "RootUser",
+        "egid": "RootGroup"
+      }
+    }
+
+  ]
+}

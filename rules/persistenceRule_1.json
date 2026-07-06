@@ -1,0 +1,47 @@
+{
+  "groups": {
+
+    "UdevRulePath": [
+      "/etc/udev/rules.d/",
+      "/lib/udev/rules.d/",
+      "/usr/lib/udev/rules.d/"
+    ],
+
+    "UdevProcess": [
+      "/usr/lib/systemd/systemd-udevd"
+    ],
+
+    "SuspiciousProgram": [
+      "/bin/bash",
+      "/bin/sh",
+      "python",
+      "perl",
+      "curl",
+      "wget",
+      "nc"
+    ],
+
+    "ReloadCommand": [
+      "udevadm control --reload",
+      "udevadm trigger"
+    ]
+
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0375_AN1056",
+      "name": "Detection Strategy for T1546.017 - Udev Rules(Linux)",
+      "description": "Udev Rule 생성 또는 수정 이후 systemd-udevd가 의심스러운 프로그램을 실행하는 행위를 탐지한다.",
+      "event_type": "persistence",
+
+      "conditions": {
+        "path": "UdevRulePath",
+        "ppid_exe": "UdevProcess",
+        "exe": "SuspiciousProgram"
+      }
+    }
+
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "groups": {
+    "HttpClient": [
+        "curl",
+        "wget",
+        "python",
+        "python3"
+    ],
+
+    "HttpMethod": [
+        "POST",
+        "-X POST",
+        "--request POST"
+    ],
+
+    "AbnormalPort": [
+        4444, 
+        8081,
+        8443,
+        9001
+    ],
+
+    "WebProtocol": [
+        "http",
+        "https",
+        "ws",
+        "wss"
+    ]
+  },
+
+
+  "rules": [
+
+    {
+      "rule_id": "DET0027_AN0076",
+      "name": "Detection of Web Protocol-Based C2 Over HTTP, HTTPS, or WebSockets",
+      "description": "HTTP/HTTPS/WebSocket 기반 C2 통신을 탐지한다.",
+      "event_type": "network_connect",
+      "syscall": "connect",
+  
+      "conditions": {
+        "exe": "HttpClient",
+        "argv": "HttpMethod",
+        "protocol": "WebProtocol",
+        "dest_port": "AbnormalPort"
+      }
+    }
+  ]
+}
+

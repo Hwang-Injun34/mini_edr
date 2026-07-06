@@ -1,0 +1,42 @@
+{
+  "groups": {
+    "Attach": [
+        "PTRACE_ATTACH"
+    ],
+
+    "MemoryRead": [
+        "PTRACE_PEEKDATA",
+        "PTRACE_PEEKTEXT"
+    ],
+
+    "MemoryWrite": [
+        "PTRACE_PEEKDATA",
+        "PTRACE_PEEKTEXT"
+    ],
+
+    "SyscallTrace": [
+        "PTRACE_SYSCALL"
+    ]
+    
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0593_AN1631",
+      "name": "Detecting OS Credential Dumping via /proc Filesystem Access on Linux",
+      "description": "공격자는 /proc 파일 시스템을 이용하여 프로세스의 민감한 메모리 영역에 접근하고, 자격 증명 정보를 추출하려는 행위를 탐지한다.",
+      "event_type": "process_access",
+      "syscall": "ptrace",
+      
+      "conditions": {
+        "request": [
+            "Attach",
+            "MemoryRead",
+            "MemoryWrite"
+        ]
+      }
+    }
+  ]
+}
+

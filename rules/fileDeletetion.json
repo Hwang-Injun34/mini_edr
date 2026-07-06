@@ -1,0 +1,47 @@
+{
+  "groups": {
+    "AuthenticationLog": [
+      "/var/log/auth.log",
+      "/var/log/secure"
+    ],
+
+    "SystemLog": [
+      "/var/log/messages",
+      "/var/log/syslog",
+      "/var/log/kern.log"
+    ],
+
+    "LoginHistory": [
+      "/var/log/wtmp",
+      "/var/log/btmp",
+      "/var/log/utmp"
+    ],
+
+    "WebServerLog": [
+      "/var/log/httpd/*",
+      "/var/log/apache2/*",
+      "/var/log/nginx/*"
+    ]
+  },
+
+  "rules": [
+
+    {
+      "rule_id": "DET0520_AN1438",
+      "name": "Behavioral Detection of Log File Clearing on Linux and macOS",
+      "description": "/var/log/ 디렉터리의 시스템 로그를 대상으로 수행되는 의심스러운 명령 실행과 로그 파일 삭제 또는 내용 초기화 행위를 탐지한다.",
+      "event_type": "file_delete",
+      "syscall": ["unlink", "unlinkat"],
+
+      "conditions": {
+        "pathname": [
+            "AuthenticationLog",
+            "SystemLog",
+            "LoginHistory",
+            "WebServerLog"
+        ]
+      }
+    }
+  ]
+}
+
