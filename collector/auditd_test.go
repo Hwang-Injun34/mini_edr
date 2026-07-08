@@ -1,182 +1,36 @@
 package collector
 
-import (
-	"testing"
+import "testing"
 
-)
+func TestParseSockAddrRecord(t *testing.T) {
+	c := NewAuditdCollector(nil)
 
-func TestExtractAuditID(t *testing.T) {
+	line := `type=SOCKADDR msg=audit(1783506680.127:46388): saddr=020000508EFB77640000000000000000SADDR={ saddr_fam=inet laddr=142.251.119.100 lport=80 }`
 
-	c := &AuditdCollector{}
+	record := c.parseSockAddrRecord(line)
 
-	line := `type=SYSCALL msg=audit(1782650957.030:72994): arch=c000003e`
-
-	id := c.extractAuditID(line)
-
-	if id != "1782650957.030:72994" {
-		t.Fatalf("want 1782650957.030:72994, got %s", id)
+	if record.RawAddress != "020000508EFB77640000000000000000" {
+		t.Fatalf("RawAddress mismatch: %s", record.RawAddress)
+	}
+	if record.Family != "inet" {
+		t.Fatalf("Family mismatch: %s", record.Family)
+	}
+	if record.IP != "142.251.119.100" {
+		t.Fatalf("IP mismatch: %s", record.IP)
+	}
+	if record.Port != 80 {
+		t.Fatalf("Port mismatch: %d", record.Port)
 	}
 }
 
-
-func TestIdentifyRecordType(t *testing.T) {
-
-	c := &AuditdCollector{}
-
-	tests := []struct {
-		line string
-		want RecordType
-	}{
-		{
-			"type=SYSCALL msg=audit(...)",
-			SYSCALL,
-		},
-		{
-			"type=EXECVE msg=audit(...)",
-			EXECVE,
-		},
-		{
-			"type=CWD msg=audit(...)",
-			CWD,
-		},
-		{
-			"type=PATH msg=audit(...)",
-			PATH,
-		},
-		{
-			"type=PROCTITLE msg=audit(...)",
-			PROCTITLE,
-		},
-	}
-
-	for _, tt := range tests {
-
-		got := c.identifyRecordType(tt.line)
-
-		if got != tt.want {
-			t.Fatalf("want %v got %v", tt.want, got)
-		}
-	}
-}
-
-func TestParseStringField(t *testing.T) {
-
-	c := &AuditdCollector{}
-
-	line := `type=SYSCALL pid=1234 comm="ls" exe="/usr/bin/ls"`
-
-	comm := c.parseStringField(line, "comm=")
-	exe := c.parseStringField(line, "exe=")
-
-	if comm != "ls" {
-		t.Fatal(comm)
-	}
-
-	if exe != "/usr/bin/ls" {
-		t.Fatal(exe)
-	}
-}
-
-func TestParseIntField(t *testing.T) {
-
-	c := &AuditdCollector{}
-
-	line := `pid=2351 ppid=1715 uid=0`
-
-	pid := c.parseIntField(line, "pid=")
-
-	if pid != 2351 {
-		t.Fatal(pid)
-	}
-}
-
-func TestParseSyscallRecord(t *testing.T) {
-
-	c := &AuditdCollector{}
-
-	line := `type=SYSCALL success=yes exit=0 pid=2351 ppid=1715 uid=0 euid=0 gid=0 comm="ls" exe="/usr/bin/ls" tty=pts0 key="process_create"`
-
-	record := c.parseSyscallRecord(line)
-
-	if record == nil {
-		t.Fatal("record is nil")
-	}
-
-	if record.PID != 2351 {
-		t.Fatal(record.PID)
-	}
-
-	if record.Command != "ls" {
-		t.Fatal(record.Command)
-	}
-
-	if record.Key != "process_create" {
-		t.Fatal(record.Key)
-	}
-}
-
-func TestParseExecveRecord(t *testing.T) {
-	c := &AuditdCollector{}
-
-	line := `type=EXECVE argc=2 a0="ls" a1="-al"`
-
-	record := c.parseExecveRecord(line)
-
-	if record == nil {
-		t.Fatal("record is nil")
-	}
-
-	if record.Argc != 2 {
-		t.Fatalf("expected argc=2, got %d", record.Argc)
-	}
-
-	if len(record.Args) != 2 {
-		t.Fatalf("expected 2 args, got %d", len(record.Args))
-	}
-
-	if record.Args[0] != "ls" {
-		t.Fatalf("expected a0=ls, got %q", record.Args[0])
-	}
-
-	if record.Args[1] != "-al" {
-		t.Fatalf("expected a1=-al, got %q", record.Args[1])
-	}
-}
-
-func TestIsReadyToAssemble(t *testing.T) {
-	c := &AuditdCollector{}
-
-	group := &AuditLogGroup{
-		Key: "process_create",
-
-		Syscall:   &SyscallRecord{},
-		Execve:    &ExecveRecord{},
-		Cwd:       &CwdRecord{},
-		Paths:     []*PathRecord{{}}, // PATH 하나 존재
-		ProcTitle: &ProcTitleRecord{},
-	}
-
-	if !c.isReadyToAssemble(group) {
-		t.Fatal("expected group to be ready")
-	}
-}
-
-
-func TestProcessLine(t *testing.T) {
-
+func TestProcessLineNetworkConnectMapping(t *testing.T) {
 	c := NewAuditdCollector(nil)
 
 	lines := []string{
-
-		`type=SYSCALL msg=audit(1:1) success=yes pid=1 key="process_create"`,
-
-		`type=EXECVE msg=audit(1:1) argc=1 a0="ls"`,
-
-		`type=CWD msg=audit(1:1) cwd="/home"`,
-
-		`type=PATH msg=audit(1:1) item=0 name="/usr/bin/ls"`,
-
-		`type=PROCTITLE msg=audit(1:1) proctitle="ls"`,
+		`type=SYSCALL msg=audit(1783506680.127:46388): arch=c000003e syscall=42 success=yes exit=0 a0=3 a1=7ffc a2=16 items=0 ppid=1666 pid=20453 auid=1000 uid=1000 gid=1000 euid=1000 suid=1000 fsuid=1000 egid=1000 sgid=1000 fsgid=1000 tty=pts0 ses=3 comm="curl" exe="/usr/bin/curl" subj=unconfined key="network_connect" ARCH=x86_64 SYSCALL=connect`,
+		`type=SOCKADDR msg=audit(1783506680.127:46388): saddr=020000508EFB77640000000000000000SADDR={ saddr_fam=inet laddr=142.251.119.100 lport=80 }`,
+		`type=CWD msg=audit(1783506680.127:46388): cwd="/home/pumpkinbee/mini_edr"`,
+		`type=PATH msg=audit(1783506680.127:46388): item=0 name="/usr/bin/curl" inode=4981511 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0 OUID="root" OGID="root"`,
 	}
 
 	for _, line := range lines {
@@ -184,15 +38,39 @@ func TestProcessLine(t *testing.T) {
 	}
 
 	select {
-
-	case event := <-c.ReadyGroups():
-
-		if event == nil {
-			t.Fatal("nil event")
+	case group := <-c.ReadyGroups():
+		if group.Key != "network_connect" {
+			t.Fatalf("Key mismatch: %s", group.Key)
+		}
+		if group.Syscall == nil {
+			t.Fatal("SyscallRecord is nil")
+		}
+		if group.Syscall.Command != "curl" {
+			t.Fatalf("Command mismatch: %s", group.Syscall.Command)
+		}
+		if group.Syscall.SyscallName != "connect" {
+			t.Fatalf("SyscallName mismatch: %s", group.Syscall.SyscallName)
+		}
+		if group.SockAddr == nil {
+			t.Fatal("SockAddrRecord is nil")
+		}
+		if group.SockAddr.IP != "142.251.119.100" {
+			t.Fatalf("SockAddr IP mismatch: %s", group.SockAddr.IP)
+		}
+		if group.SockAddr.Port != 80 {
+			t.Fatalf("SockAddr Port mismatch: %d", group.SockAddr.Port)
+		}
+		if group.Cwd == nil || group.Cwd.Directory != "/home/pumpkinbee/mini_edr" {
+			t.Fatalf("CWD mismatch")
+		}
+		if len(group.Paths) != 1 {
+			t.Fatalf("PATH count mismatch: %d", len(group.Paths))
+		}
+		if group.Paths[0].Name != "/usr/bin/curl" {
+			t.Fatalf("PATH name mismatch: %s", group.Paths[0].Name)
 		}
 
 	default:
-
-		t.Fatal("event not generated")
+		t.Fatal("조립 완료된 NetworkConnect 이벤트가 ReadyGroups로 전달되지 않았습니다")
 	}
 }

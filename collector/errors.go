@@ -21,7 +21,7 @@ var (
 	ErrMissingRequired = errors.New("필수 레코드가 누락되어 조립을 완료할 수 없습니다")
 )
 
-// 2. EDRError: 구체적인 컨텍스트를 담을 커스텀 에러 구조체
+// EDRError: 구체적인 컨텍스트를 담을 커스텀 에러 구조체
 type EDRError struct {
 	Stage     PipelineStage // 어느 단계인가 (1단계, 2단계)
 	Component string        // 어느 함수/컴포넌트인가 (ex: "runTailLoop", "processLine")

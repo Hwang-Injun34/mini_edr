@@ -11,8 +11,8 @@ const (
 	FileCreate          EventType = "FileCreate"
 	FileDelete          EventType = "FileDelete"
 	ProcessAccess       EventType = "ProcessAccess"
-	ShadowAccess        EventType = "ShadowAccess"
-	PasswordAccess      EventType = "PasswordAccess" // 네이밍 통일 (Password)
+	ShadowAccess        EventType = "ShadowAccess" 		
+	PasswordAccess      EventType = "PasswordAccess" 
 	PrivilegeEscalation EventType = "PrivilegeEscalation"
 	Persistence         EventType = "Persistence"
 	UnknownEvent        EventType = "Unknown"
@@ -52,7 +52,7 @@ var EventRecords = map[EventType][]RecordType{
 	FileCreate: {
 		SYSCALL,
 		CWD,
-		PATH, // 중복 표기 제거 후 단일 명시 (인메모리에서 다중 파편으로 수집 처리)
+		PATH, 
 		PROCTITLE,
 	},
 	FileDelete: {
@@ -71,7 +71,7 @@ var EventRecords = map[EventType][]RecordType{
 		PATH,
 		PROCTITLE,
 	},
-	PasswordAccess: { // PasswdAccess 오타 수정 완료
+	PasswordAccess: {
 		SYSCALL,
 		CWD,
 		PATH,
@@ -95,20 +95,39 @@ var EventRecords = map[EventType][]RecordType{
 
 // SYSCALL 레코드 상세 구조체
 type SyscallRecord struct {
+	Arch   			string 	`json:"arch"` 
+	Syscall 		int    	`json:"syscall"`
+	SyscallName 	string  `json:"syscall_name"`
+
 	Success bool   `json:"success"`
 	Exit    int    `json:"exit"`
+
+	Args []string  `json:"args"`
+	Items   int    `json:"items"`
+
 	PID     int    `json:"pid"`
 	PPID    int    `json:"ppid"`
-	UID     int    `json:"uid"`
-	EUID    int    `json:"euid"`
-	GID     int    `json:"gid"`
+
+	AUID  int `json:"auid"`
+	UID   int `json:"uid"`
+	EUID  int `json:"euid"`
+	GID   int `json:"gid"`
+	EGID  int `json:"egid"`
+	SUID  int `json:"suid"`
+	FSUID int `json:"fsuid"`
+	SGID  int `json:"sgid"`
+	FSGID int `json:"fsgid"`
+	
+	TTY     string `json:"tty"`
+	Session int    `json:"session"`
+	
 	Command string `json:"command"`
 	Exe     string `json:"exe"`
-	TTY     string `json:"tty"`
+	Subject string `json:"subject"`
 	Key     string `json:"key"`
 }
 
-// EXECVE 레코드 상세 구조체 (ProcessCreate 명령어 인자용)
+// EXECVE 레코드 상세 구조체
 type ExecveRecord struct {
 	Argc int      `json:"argc"`
 	Args []string `json:"args"`
@@ -121,9 +140,26 @@ type CwdRecord struct {
 
 // PATH 레코드 상세 구조체 (파일 관련 시스템 정보 변수)
 type PathRecord struct {
-	Name     string `json:"name"`
-	Item     int    `json:"item"`      // int 타입 확정
-	NameType string `json:"name_type"` // CREATE, DELETE, NORMAL 등
+	Item     int    `json:"item"`      
+	Name     string `json:"name"`      
+	Inode    int    `json:"inode"`     
+	Dev      string `json:"dev"`      
+	Mode     string `json:"mode"`      
+
+	OUID int `json:"ouid"` 
+	OGID int `json:"ogid"` 
+
+	RDev     string `json:"rdev"`      
+	NameType string `json:"name_type"` 
+
+	CapFP     string `json:"cap_fp"`
+	CapFI     string `json:"cap_fi"`
+	CapFE     string `json:"cap_fe"`
+	CapFVer   string `json:"cap_fver"`
+	CapFRootID string `json:"cap_frootid"`
+
+	OwnerUser  string `json:"owner_user"`  
+	OwnerGroup string `json:"owner_group"` 
 }
 
 // PROCTITLE 레코드 상세 구조체
@@ -133,5 +169,9 @@ type ProcTitleRecord struct {
 
 // SOCKADDR 레코드 상세 구조체 (Network 아웃바운드 목적지 IP/Port)
 type SockAddrRecord struct {
-	Address string `json:"address"`
+	RawAddress string `json:"raw_address"`
+	
+	Family string `json:"family"`
+	IP string `json:"ip"`
+	Port int  `json:"port"`
 }

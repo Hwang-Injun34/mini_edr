@@ -123,10 +123,11 @@ func (t *TailEngine) runLoop() {
 						Stage: StageTail,
 						Component: "runLoop.ChannelWrite",
 						Err: ErrBufferOverflow,
-						Detail:    fmt.Sprintf("1단계 수집 채널 최대 제한 수량(1000) 초과 유실 위기. 원문: %.30s...", line.Text),
+						Detail: fmt.Sprintf("1단계 수집 채널 최대 제한 수량(1000) 초과 유실 위기. 원문: %.30s...", line.Text),
 					}:
 					default:
-						fmt.Println("[Drop Warning] 원시 로그 수신 버퍼 및 에러 채널 동시 풀(Full) 상태.")
+						fmt.Println("[Drop Warning] 원시 로그 수신 버퍼 및 에러 채널 동시 풀(Full) 상태")
+						fmt.Println()
 				}
 			}
 		}

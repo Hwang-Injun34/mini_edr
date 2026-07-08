@@ -1,0 +1,100 @@
+===========================================
+	참고 자료
+===========================================
+-------------------------------------------
+	SYSCALL 
+-------------------------------------------
+type=SYSCALL msg=audit(1782750557.834:45388): 
+arch=c000003e 									// CPU 아키텍처 코드
+syscall=59 										// 시스템 콜 번호
+success=yes 									// 시스템 콜 성공 여부
+exit=0 											// 시스템 콜 반환값
+
+												// 메모리 주소 포인터
+a0=561dd89bf5e0 								// execve()의 첫 번째 인자
+a1=561dd89ba520 								// execve()의 두 번째 인자
+a2=561dd8983e80 
+a3=8 
+
+items=2 										// 이 이벤트와 연결된 PATH 레코드 개수
+ppid=1666 										// 부모 프로세스 PID
+pid=20453 										// 현재 실행되는 프로세스 ID
+auid=1000 										// Audit User ID(최초 로그인한 사용자 ID)
+uid=0 											// 실제 사용자 
+gid=0 											// 실제 그룹
+euid=0 											// 유효 사용자 ID(권한 검사 시 사용)
+suid=0 											// Saved UID(권한 복구를 위해 저장되는 UID)
+fsuid=0 										// 파일 시스템 접근 권한에 사용되는 UID
+egid=0 											// 유효 그룹
+sgid=0 											// Saved GID
+fsgid=0 										// 파일 시스템 접근 권한에 사용되는 GID
+
+tty=pts0 										// 실행된 터미널
+ses=3 											// 로그인 세션 번호
+comm="tail" 									// 프로세스 이름(task_struct->comm)
+exe="/usr/bin/tail" 							// 실제 실행 파일의 절대 경로
+subj=unconfined 								// SELinux 보안 컨텍스트
+key=“process_create"							// audit rule에 지정한 key 값
+ARCH=x86_64 									// 사람이 읽기 쉬운 아키텍처 이름
+SYSCALL=execve 									// 사람이 읽기 쉬운 시스템 콜 이름
+
+
+-------------------------------------------
+	EXECVE
+-------------------------------------------
+type=EXECVE msg=audit(1782753753.194:50765): 
+argc=2 											// 명령행 인자의 개수
+a0="ls" 										// argv[0]
+a1="--color=auto"
+
+
+-------------------------------------------
+	CWD
+-------------------------------------------
+type=CWD msg=audit(1782753753.194:50765): 
+cwd="/home/pumpkinbee/mini_edr"		// 프로세스가 시스템 콜을 호출한 시점의 현재 작업 디렉터리
+
+
+-------------------------------------------
+	PATH
+-------------------------------------------
+type=PATH msg=audit(1782753753.194:50765): 
+item=0 							// PATH 레코드의 순번
+name="/usr/bin/ls" 				// 실제 접근한 파일의 절대 경로
+inode=4981511 					// 파일의 inode 번호
+dev=fd:00 						// 파일이 존재하는 장치의 ID
+mode=0100755 					// 파일 타입 + 권한
+ouid=0 							// 파일 소유자의 UID
+ogid=0 							// 파일 소유 그룹의 GID
+rdev=00:00 						// 특수 파일(Device File)인 경우 장치 번호
+nametype=NORMAL 				// 접근한 파일의 종료(PARENT, CREATE, DELETE, NORMAL 등)
+
+cap_fp=0 						// File Capability Permitted 비트
+cap_fi=0 						// File Capability Inheritable 비트
+cap_fe=0 						// File Capability Effective 비트
+cap_fver=0 						// File Capability 버전 정보
+cap_frootid=0					// File Capability Root ID
+OUID="root" 					// 파일 소유자 이름
+OGID="root"					    // 파일 소유 그룹 이름
+
+
+-------------------------------------------
+	PROCTITLE
+-------------------------------------------
+type=PROCTITLE msg=audit(1782753753.194:50765): proctitle=6C73002D2D636F6C6F723D6175746F		// 명령행을 16진수 형태로 인코딩
+
+
+-------------------------------------------
+	SOCKADDR
+-------------------------------------------
+type=SOCKADDR msg=audit(1783504289.515:42067): 
+
+saddr=020000508EFB76710000000000000000 // 커널이 기록한 Raw Socket Address
+									   // sockaddr_in 구조체를 16진수(Hex)로 저장
+SADDR={ 
+	saddr_fam=inet 			// 주소 체계
+							// inet = IPv4, inet6 = IPv6, unix = Unix Domain Socket
+	laddr=142.251.118.113   // 연결 대상(Remote) IPv4 주소
+	lport=80 			    // 연결 대상 포트 번호
+}
+

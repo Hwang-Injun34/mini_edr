@@ -6,40 +6,38 @@ import (
 	"time"
 )
 
-// AI - TailEngine 생성 테스트
-func TestNewTailEngine(t *testing.T) {
-	engine := NewTailEngine("/tmp/test.log")
-
-	if engine == nil {
-		t.Fatal("TailEngine 생성 실패")
-	}
-
-	if engine.logPath != "/tmp/test.log" {
-		t.Errorf("로그 경로가 올바르지 않습니다.")
-	}
-
-	if engine.lineChan == nil {
-		t.Error("lineChan이 생성되지 않았습니다.")
-	}
-}
-
-// AI - Start / Stop 테스트
-func TestTailEngineStartStop(t *testing.T) {
-
-	tmpFile, err := os.CreateTemp("", "tail_test_*.log")
+func TestTailEngineReceivesNewLine(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "audit-test-*.log")
 	if err != nil {
-		t.Fatalf("임시 파일 생성 실패 : %v", err)
+		t.Fatal(err)
 	}
 	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
 
 	engine := NewTailEngine(tmpFile.Name())
 
 	if err := engine.Start(); err != nil {
-		t.Fatalf("Start 실패 : %v", err)
+		t.Fatal(err)
+	}
+	defer engine.Stop()
+
+	time.Sleep(200 * time.Millisecond)
+
+	_, err = tmpFile.WriteString("type=SYSCALL msg=audit(123): test log\n")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	select {
+	case line := <-engine.NextLine():
+		expected := "type=SYSCALL msg=audit(123): test log"
+		if line != expected {
+			t.Fatalf("expected %q, got %q", expected, line)
+		}
 
-	engine.Stop()
+	case err := <-engine.Errors():
+		t.Fatalf("unexpected error: %v", err)
+
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: 로그 라인을 받지 못함")
+	}
 }

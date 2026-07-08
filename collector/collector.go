@@ -1,7 +1,7 @@
 package collector
 
 
-type Collecotr interface{
+type Collector interface{
 	Start() error
 	Stop()
 	Errors() <-chan error 
@@ -16,7 +16,7 @@ type RawLineStreamer interface{
 }
 
 type GroupAssembler interface{
-	Strat() error 
+	Start() error 
 	Stop()
 	ReadyGroups() <- chan *AuditLogGroup 
 	Errors() <- chan error
