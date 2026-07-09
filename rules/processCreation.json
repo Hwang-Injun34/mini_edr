@@ -1,23 +1,15 @@
 {
   "groups": {
-
     "Shell": [
       "/bin/bash",
       "/bin/sh",
       "/bin/dash",
       "/bin/ash",
-      "/bin/busybox"
-    ],
-
-    "WebServer": [
-      "/usr/sbin/apache2",
-      "/usr/sbin/httpd",
-      "/usr/sbin/nginx",
-      "/usr/sbin/php-fpm"
-    ],
-
-    "RemoteSession": [
-      "/usr/sbin/sshd"
+      "/bin/busybox",
+      "/usr/bin/bash",
+      "/usr/bin/sh",
+      "bash",
+      "sh"
     ],
 
     "Download": {
@@ -57,19 +49,16 @@
         "telnet",
         "socat"
       ],
-
       "option": [
         "-e",
         "-c"
       ],
-
       "shell": [
         "/bin/bash",
         "/bin/sh",
         "bash",
         "sh"
       ],
-
       "network": [
         "/dev/tcp"
       ]
@@ -85,21 +74,15 @@
   },
 
   "rules": [
-
     {
       "rule_id": "DET0384_AN1081",
-      "name": "Behavioral Detection of Unix Shell Execution",
+      "name": "의심스러운 Unix Shell 활동의 행위 기반 탐지",
       "description": "프로세스 생성 이벤트를 기반으로 의심스러운 Unix Shell 실행 및 그에 따른 악성 활동을 탐지한다.",
-      "event_type": "process_create",
+      "event_type": "ProcessCreate",
       "syscall": ["execve", "execveat"],
-
+      
       "conditions": {
-        "exe": "Shell",
-        "ppid_exe": [
-          "WebServer",
-          "RemoteSession"
-        ],
-
+        "ppid_exe": "Shell",
         "argv": {
           "download": "Download",
           "system_discovery": "SystemDiscovery",
@@ -109,7 +92,5 @@
         }
       }
     }
-
   ]
 }
-

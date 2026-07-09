@@ -4,13 +4,25 @@
         "curl",
         "wget",
         "python",
-        "python3"
+        "python3",
+        "/usr/bin/curl",
+        "/usr/bin/wget",
+        "/usr/bin/python",
+        "/usr/bin/python3"
     ],
 
     "HttpMethod": [
         "POST",
         "-X POST",
         "--request POST"
+    ],
+    
+    "Download": [
+        "http://",
+        "https://",
+        "-O",
+        "-o",
+        "--output"
     ],
 
     "AbnormalPort": [
@@ -21,6 +33,7 @@
     ],
 
     "WebProtocol": [
+        "tcp",
         "http",
         "https",
         "ws",
@@ -30,17 +43,18 @@
 
 
   "rules": [
-
     {
       "rule_id": "DET0027_AN0076",
-      "name": "Detection of Web Protocol-Based C2 Over HTTP, HTTPS, or WebSockets",
+      "name": "HTTP, HTTPS 또는 웹 프로토콜을 이용한 웹 프로토콜 기반 C2 탐지",
       "description": "HTTP/HTTPS/WebSocket 기반 C2 통신을 탐지한다.",
-      "event_type": "network_connect",
+      "event_type": "NetworkConnect",
       "syscall": "connect",
   
       "conditions": {
         "exe": "HttpClient",
-        "argv": "HttpMethod",
+        "argv": {
+          "download":"Download"
+        },
         "protocol": "WebProtocol",
         "dest_port": "AbnormalPort"
       }

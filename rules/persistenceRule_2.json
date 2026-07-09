@@ -5,25 +5,6 @@
       "/home/*/.ssh/authorized_keys",
       "/root/.ssh/authorized_keys",
       "/etc/skel/.ssh/authorized_keys"
-    ],
-
-    "Shell": [
-      "/bin/bash",
-      "/bin/sh",
-      "/bin/dash"
-    ],
-
-    "TextEditor": [
-      "vim",
-      "vi",
-      "nano",
-      "sed"
-    ],
-
-    "WriteCommand": [
-      "echo",
-      "cat",
-      "tee"
     ]
 
   },
@@ -32,18 +13,12 @@
 
     {
       "rule_id": "DET0126_AN0350",
-      "name": "Detection Strategy for SSH Key Injection in Authorized Keys",
-      "description": "authorized_keys 파일 수정을 통해 SSH 공개키 기반 영속성을 확보하려는 행위를 탐지한다.",
-      "event_type": "persistence",
+      "name": "Authorized Keys 내 SSH 키 주입 탐지 전략",
+      "description": "authorized_keys 파일에 대한 생성 또는 수정 행위를 탐지한다.",
+      "event_type": "Persistence",
 
       "conditions": {
-        "path": "AuthorizedKeyPath",
-        "exe": [
-          "Shell",
-          "TextEditor"
-        ],
-        "argv": "WriteCommand"
-
+        "pathname": "AuthorizedKeyPath"
       }
     }
 
