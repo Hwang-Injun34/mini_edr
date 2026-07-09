@@ -480,41 +480,63 @@ func (c *AuditdCollector) identifyRecordType(line string) RecordType {
 
 // parseStringField는 문자열에서 특정 값을 식별하는 함수이다.
 func (c *AuditdCollector) parseStringField(line, key string) string {
+	searchStart := 0
 
-	idx := strings.Index(line, key)
-	if idx == -1 {
-		return ""
-	}
-
-	start := idx + len(key)
-
-	// 문자열이면
-	if start < len(line) && line[start] == '"' {
-
-		start++
-
-		end := strings.Index(line[start:], "\"")
-		if end == -1 {
+	for {
+		idx := strings.Index(line[searchStart:], key)
+		if idx == -1 {
 			return ""
+		}
+
+		idx += searchStart
+
+		// key 앞 문자가 필드 구분자인지 확인
+		// 예: " pid="는 OK, "ppid=" 안의 "pid="는 거부
+		if idx > 0 {
+			prev := line[idx-1]
+			if prev != ' ' && prev != ':' {
+				searchStart = idx + len(key)
+				continue
+			}
+		}
+
+		start := idx + len(key)
+
+		// 문자열 값
+		if start < len(line) && line[start] == '"' {
+			start++
+
+			end := strings.Index(line[start:], "\"")
+			if end == -1 {
+				return ""
+			}
+
+			return line[start : start+end]
+		}
+
+		// 숫자나 yes/no 같은 값
+		end := strings.Index(line[start:], " ")
+		if end == -1 {
+			return line[start:]
 		}
 
 		return line[start : start+end]
 	}
-
-	// 숫자나 yes/no 같은 값
-	end := strings.Index(line[start:], " ")
-	if end == -1 {
-		return line[start:]
-	}
-
-	return line[start : start+end]
 }
 
 // parseIntField는 Audit Record에서 지정한 필드의 값을 추출한 후,
 // 문자열을 정수(int)로 변환하여 반환하는 함수이다.
 func (c *AuditdCollector) parseIntField(line, key string) int {
 	value := c.parseStringField(line, key)
-	n, _ := strconv.Atoi(value)
+	if value == "" {
+		return 0
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+
 	return n
 }
 

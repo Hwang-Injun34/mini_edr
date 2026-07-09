@@ -31,7 +31,7 @@ type EDRError struct {
 
 // Error: Go 표준 error 인터페이스 만족을 위한 포맷팅 출력 함수
 func (e *EDRError) Error() string {
-	return fmt.Sprintf("[%s -> %s] 오류 발생: %v (%s)", e.Stage, e.Component, e.Err, e.Detail)
+	return fmt.Sprintf("[%s -> %s] 오류 발생: %v (%s)\n", e.Stage, e.Component, e.Err, e.Detail)
 }
 
 // Unwrap: errors.As 및 errors.Is가 내부 에러를 파고들 수 있도록 길을 열어주는 핵심 함수
