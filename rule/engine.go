@@ -57,7 +57,7 @@ func (re *RuleEngine) LoadRuleFile(filePath string) error {
 	}
 
 	re.rules = append(re.rules, config.Rules...)
-	fmt.Printf("[RuleEngine] 보안 규칙 적재 완료: %s (누적 규칙 개수: %d개)\n", filePath, len(re.rules))
+	// fmt.Printf("[RuleEngine] 보안 규칙 적재 완료: %s (누적 규칙 개수: %d개)\n", filePath, len(re.rules))
 	return nil
 }
 
@@ -77,8 +77,17 @@ func (re *RuleEngine) runMatchingLoop(ctx context.Context, wg *sync.WaitGroup, e
 			return
 		case event, ok := <-eventStream:
 			if !ok {
+				fmt.Println("[RuleEngine Debug] eventStream 닫힘")
 				return
 			}
+			fmt.Printf(
+				"\n[RuleEngine] Event | Type=%s | Image=%s | Parent=%s | Cmd=%s | Target=%s\n",
+				event.Type,
+				event.ImagePath,
+				event.ParentImage,
+				event.CommandLine,
+				event.TargetFile,
+			)			
 			re.evaluateEvent(event)
 		}
 	}
@@ -102,42 +111,75 @@ func (re *RuleEngine) evaluateEvent(event *model.SystemEvent) {
 
 			// 구조체 필드 맵 유연 대응 매핑 스왑
 			switch condKey {
-			case "exe", "pathname", "path":
+			case "exe":
 				eventFieldVal = event.ImagePath
-				if event.TargetFile != "" {
-					eventFieldVal = event.TargetFile // 파일 이벤트 시 정제 경로 우선 바인딩
-				}
+		
 			case "ppid_exe":
-				eventFieldVal = event.ImagePath // ppid 경로 추적 인터페이스 대조용
+				eventFieldVal = event.ParentImage
+
 			case "argv":
 				eventFieldVal = event.CommandLine
+
+			case "path", "pathname":
+				eventFieldVal = event.PathName
+				if eventFieldVal == ""{
+					eventFieldVal = event.TargetFile
+				}
+			
+			case "request":
+				eventFieldVal = event.Request 
+
 			case "euid":
 				eventFieldVal = event.EUID
+
 			case "egid":
-				// 정형 기법 대조 우회 스텁
-				eventFieldVal = event.EUID 
+				eventFieldVal = event.EGID 
+
+			case "protocol":
+				eventFieldVal = event.Protocol
+
+			case "dest_ip":
+				eventFieldVal = event.DstIP
+
+			case "dest_port":
+				eventFieldVal = event.DstPort	
+			
 			default:
 				isMatched = false
 			}
 
-			// 단 하나의 조건이라도 미치지 못하면 탈락
-			if !re.matcher.MatchCondition(condKey, condVal, eventFieldVal) {
+			fmt.Printf(
+				"[RuleEngine]\tCheck | Rule=%s | Key=%s | Cond=%v | EventVal=%v\n",
+				rule.RuleID,
+				condKey,
+				condVal,
+				eventFieldVal,
+			)
+
+			matched := re.matcher.MatchCondition(condKey, condVal, eventFieldVal)
+			fmt.Printf(
+				"[RuleEngine]\tResult | Rule=%s | Key=%s | Matched=%v\n",
+				rule.RuleID,
+				condKey,
+				matched,
+			)
+
+			if !matched {
 				isMatched = false
 				break
 			}
 		}
 
-		// 모든 위협 조건 일치 ➔ 침해 사고 탐지 경보 발행!
 		if isMatched {
-			// 오리지널 규칙 ID와 매칭 명칭을 타임라인에 각인
-			event.AuditKey = fmt.Sprintf("[%s] %s", rule.RuleID, rule.Name)
-			
-			select {
-			case re.alertChan <- event:
-				fmt.Printf("\n[위협 탐지 방어선 돌파] 규칙 ID: %s | 탐지명: %s | 대상 PID: %d\n", rule.RuleID, rule.Name, event.PID)
-			default:
-				fmt.Println("[Drop Warning] 얼럿 발생 큐 포화")
-			}
+			fmt.Printf("[RuleEngine]\tMATCH | EventType=%s | RuleEventType=%s | RuleID=%s | Name=%s | PID=%d | Cmd=%s\n",
+				event.Type,
+				rule.EventType,
+				rule.RuleID,
+				rule.Name,
+				event.PID,
+				event.CommandLine,
+			)
 		}
 	}
+	fmt.Println()
 }
