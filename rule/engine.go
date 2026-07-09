@@ -106,50 +106,19 @@ func (re *RuleEngine) evaluateEvent(event *model.SystemEvent) {
 
 		// [실시간 규칙 매칭 가동] 
 		isMatched := true
+
 		for condKey, condVal := range rule.Conditions {
-			var eventFieldVal interface{}
-
-			// 구조체 필드 맵 유연 대응 매핑 스왑
-			switch condKey {
-			case "exe":
-				eventFieldVal = event.ImagePath
-		
-			case "ppid_exe":
-				eventFieldVal = event.ParentImage
-
-			case "argv":
-				eventFieldVal = event.CommandLine
-
-			case "path", "pathname":
-				eventFieldVal = event.PathName
-				if eventFieldVal == ""{
-					eventFieldVal = event.TargetFile
-				}
-			
-			case "request":
-				eventFieldVal = event.Request 
-
-			case "euid":
-				eventFieldVal = event.EUID
-
-			case "egid":
-				eventFieldVal = event.EGID 
-
-			case "protocol":
-				eventFieldVal = event.Protocol
-
-			case "dest_ip":
-				eventFieldVal = event.DstIP
-
-			case "dest_port":
-				eventFieldVal = event.DstPort	
-			
-			default:
+			eventFieldVal, ok := GetEventField(event, condKey)
+			if !ok {
+				fmt.Printf("[RuleEngine]\tUnsupported Condition | Rule=%s | Key=%s\n",
+					rule.RuleID,
+					condKey,
+				)
 				isMatched = false
+				break
 			}
 
-			fmt.Printf(
-				"[RuleEngine]\tCheck | Rule=%s | Key=%s | Cond=%v | EventVal=%v\n",
+			fmt.Printf("[RuleEngine]\tCheck | Rule=%s | Key=%s | Cond=%v | EventVal=%v\n",
 				rule.RuleID,
 				condKey,
 				condVal,
@@ -157,8 +126,8 @@ func (re *RuleEngine) evaluateEvent(event *model.SystemEvent) {
 			)
 
 			matched := re.matcher.MatchCondition(condKey, condVal, eventFieldVal)
-			fmt.Printf(
-				"[RuleEngine]\tResult | Rule=%s | Key=%s | Matched=%v\n",
+
+			fmt.Printf("[RuleEngine]\tResult | Rule=%s | Key=%s | Matched=%v\n",
 				rule.RuleID,
 				condKey,
 				matched,
@@ -169,8 +138,10 @@ func (re *RuleEngine) evaluateEvent(event *model.SystemEvent) {
 				break
 			}
 		}
-
+		
 		if isMatched {
+			event.AuditKey = fmt.Sprintf("[%s] %s", rule.RuleID, rule.Name)
+
 			fmt.Printf("[RuleEngine]\tMATCH | EventType=%s | RuleEventType=%s | RuleID=%s | Name=%s | PID=%d | Cmd=%s\n",
 				event.Type,
 				rule.EventType,
@@ -179,7 +150,14 @@ func (re *RuleEngine) evaluateEvent(event *model.SystemEvent) {
 				event.PID,
 				event.CommandLine,
 			)
+
+			select {
+			case re.alertChan <- event:
+			default:
+				fmt.Println("[RuleEngine]\tDrop Warning | Alert queue full")
+			}
 		}
+
+		fmt.Println()
 	}
-	fmt.Println()
 }
