@@ -23,6 +23,12 @@ type SystemEvent struct {
 	Type      collector.EventType `json:"type"`  // 최종 이벤트 유형(ProcessCreate, FileCreate 등)
 	AuditKey  string    `json:"audit_key"` 	     // Auditd Rule의 k값 또는 탐지된 Rule ID
 	
+	// --------------------------------
+	// 시스템 콜 정보
+	// --------------------------------
+	SyscallName string `json:"syscall_name"`
+	Success     bool   `json:"success"`
+	Exit        int    `json:"exit"`
 
 	// --------------------------------
 	// 프로세스 정보
@@ -46,6 +52,7 @@ type SystemEvent struct {
 	// 명령 실행 정보
 	// --------------------------------
 	CommandLine string `json:"command_line"`	// EXECVE 레코드의 인자를 하나의 문자열로 합친 명령행
+	CurrentDir  string `json:"current_dir"`
 	
 	// --------------------------------
 	// 파일 이벤트 정보
@@ -65,6 +72,7 @@ type SystemEvent struct {
 	// ProcessAccess / ptrace 상세 정보
 	// --------------------------------
 	Request string `json:"request"`
+	TargetPID int    `json:"target_pid"`
 
 	// --------------------------------
 	// 내부 디버깅용 원본 데이터
