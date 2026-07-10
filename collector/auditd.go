@@ -118,7 +118,7 @@ func (c *AuditdCollector) processLine(line string) {
 	recordType := c.identifyRecordType(line)
 	// fmt.Println("RecordType: ", recordType)
 	if recordType == "" {
-		c.reportError(StageAssemble, "processLine.identifyRecordType", ErrInvalidFragment, "미지원 레코드 타입 식별 불가: "+line)
+
 		return
 	}
 
