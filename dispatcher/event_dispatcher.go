@@ -220,7 +220,7 @@ func (d *EventDispatcher) enrichProcessAccess(event *model.SystemEvent, group *c
 	event.Type = collector.ProcessAccess
 
 	// ptrace(request, pid, addr, data)
-	// a0 = request
+	// a0 = ptrace 요청 종류
 	if len(group.Syscall.Args) > 0 {
 		event.Request = d.ptraceRequestName(group.Syscall.Args[0])
 	}
@@ -230,8 +230,9 @@ func (d *EventDispatcher) enrichProcessAccess(event *model.SystemEvent, group *c
 		event.TargetPID = d.parseSyscallPID(group.Syscall.Args[1])
 	}
 
+	// PROCTITLE은 16진수이므로 사람이 읽을 수 있도록 디코딩한다.
 	if group.ProcTitle != nil {
-		event.CommandLine = group.ProcTitle.Title
+		event.CommandLine = d.decodeProcTitle(group.ProcTitle.Title)
 	}
 }
 
@@ -316,24 +317,59 @@ func (d *EventDispatcher) resolveProcessExe(pid int) string {
 	return ""
 }
 
-func (d *EventDispatcher) ptraceRequestName(a0 string) string {
-	switch strings.ToLower(a0) {
-	case "10", "0xa":
-		return "PTRACE_ATTACH"
-	case "2", "0x2":
-		return "PTRACE_PEEKDATA"
-	case "1", "0x1":
+func (d *EventDispatcher) ptraceRequestName(raw string) string {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	value = strings.TrimPrefix(value, "0x")
+
+	switch value {
+	case "0":
+		return "PTRACE_TRACEME"
+	case "1":
 		return "PTRACE_PEEKTEXT"
-	case "5", "0x5":
-		return "PTRACE_POKEDATA"
-	case "4", "0x4":
+	case "2":
+		return "PTRACE_PEEKDATA"
+	case "3":
+		return "PTRACE_PEEKUSER"
+	case "4":
 		return "PTRACE_POKETEXT"
-	case "7", "0x7":
+	case "5":
+		return "PTRACE_POKEDATA"
+	case "6":
+		return "PTRACE_POKEUSER"
+	case "7":
 		return "PTRACE_CONT"
-	case "24", "0x18":
+	case "9":
+		return "PTRACE_SINGLESTEP"
+	case "10":
+		return "PTRACE_ATTACH"
+	case "11":
+		return "PTRACE_DETACH"
+	case "18":
 		return "PTRACE_SYSCALL"
+	case "4200":
+		return "PTRACE_SETOPTIONS"
+	case "4201":
+		return "PTRACE_GETEVENTMSG"
+	case "4202":
+		return "PTRACE_GETSIGINFO"
+	case "4203":
+		return "PTRACE_SETSIGINFO"
+	case "4204":
+		return "PTRACE_GETREGSET"
+	case "4205":
+		return "PTRACE_SETREGSET"
+	case "4206":
+		return "PTRACE_SEIZE"
+	case "4207":
+		return "PTRACE_INTERRUPT"
+	case "4208":
+		return "PTRACE_LISTEN"
+	case "4209":
+		return "PTRACE_PEEKSIGINFO"
+	case "420e":
+		return "PTRACE_GET_SYSCALL_INFO"
 	default:
-		return a0
+		return raw
 	}
 }
 
@@ -434,17 +470,25 @@ func (d *EventDispatcher) selectTargetPath(
 }
 
 
-func (d *EventDispatcher) decodeProcTitle(value string) string {
-	if value == "" {
+func (d *EventDispatcher) decodeProcTitle(raw string) string {
+	if raw == "" {
 		return ""
 	}
 
-	decoded, err := hex.DecodeString(value)
+	decoded, err := hex.DecodeString(raw)
 	if err != nil {
-		return value
+		return raw
 	}
 
-	// PROCTITLE은 인자 사이를 NULL 문자로 구분한다.
-	result := strings.ReplaceAll(string(decoded), "\x00", " ")
-	return strings.TrimSpace(result)
+	parts := strings.Split(string(decoded), "\x00")
+	result := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return strings.Join(result, " ")
 }

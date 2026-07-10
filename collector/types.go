@@ -46,8 +46,6 @@ var EventRecords = map[EventType][]RecordType{
 	NetworkConnect: {
 		SYSCALL,
 		SOCKADDR,
-		CWD,
-		PATH,
 	},
 	FileCreate: {
 		SYSCALL,

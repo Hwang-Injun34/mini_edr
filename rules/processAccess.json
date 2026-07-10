@@ -1,23 +1,23 @@
 {
   "groups": {
     "Attach": [
-        "PTRACE_ATTACH"
+      "PTRACE_ATTACH",
+      "PTRACE_SEIZE"
     ],
 
     "MemoryRead": [
-        "PTRACE_PEEKDATA",
-        "PTRACE_PEEKTEXT"
+      "PTRACE_PEEKDATA",
+      "PTRACE_PEEKTEXT"
     ],
 
     "MemoryWrite": [
-        "PTRACE_PEEKDATA",
-        "PTRACE_PEEKTEXT"
+      "PTRACE_POKEDATA",
+      "PTRACE_POKETEXT"
     ],
 
     "SyscallTrace": [
-        "PTRACE_SYSCALL"
+      "PTRACE_SYSCALL"
     ]
-    
   },
 
   "rules": [

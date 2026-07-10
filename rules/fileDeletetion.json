@@ -21,6 +21,10 @@
       "/var/log/httpd/*",
       "/var/log/apache2/*",
       "/var/log/nginx/*"
+    ],
+
+    "TestDeleteLog": [
+      "/tmp/mini-edr-delete-test.log"
     ]
   },
 
@@ -38,7 +42,8 @@
             "AuthenticationLog",
             "SystemLog",
             "LoginHistory",
-            "WebServerLog"
+            "WebServerLog",
+            "TestDeleteLog"
         ]
       }
     }

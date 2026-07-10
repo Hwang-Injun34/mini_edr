@@ -1,8 +1,12 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/binary"
+	"net"
+	"syscall"
 	"fmt"
 	"strconv"
 	"strings"
@@ -410,27 +414,82 @@ func (c *AuditdCollector) parseProcTitleRecord(line string) *ProcTitleRecord {
 // --------------------------------
 // SOCKADDR Parser
 // --------------------------------
-func (c *AuditdCollector) parseSockAddrRecord(line string) *SockAddrRecord {
-	raw := c.parseStringField(line, "saddr=")
+func (c *AuditdCollector) parseSockAddrRecord(
+	line string,
+) *SockAddrRecord {
+	raw := c.parseHexField(line, "saddr=")
 
-	if idx := strings.Index(raw, "SADDR={"); idx != -1 {
-		raw = raw[:idx]
-	}
-
-	family := c.parseStringField(line, "saddr_fam=")
-	ip := c.parseStringField(line, "laddr=")
-	port := c.parseIntField(line, "lport=")
-
-	if family == "" || ip == "" || port == 0 {
-		family, ip, port = decodeSockAddr(raw)
-	}
-
-	return &SockAddrRecord{
+	record := &SockAddrRecord{
 		RawAddress: raw,
-		Family:     family,
-		IP:         ip,
-		Port:       port,
 	}
+
+	if raw == "" {
+		fmt.Printf("[SOCKADDR Debug] saddr 추출 실패: %s\n", line)
+		return record
+	}
+
+	decoded, err := hex.DecodeString(raw)
+	if err != nil {
+		fmt.Printf(
+			"[SOCKADDR Debug] hex 해석 실패: raw=%s err=%v\n",
+			raw,
+			err,
+		)
+		return record
+	}
+
+	if len(decoded) < 2 {
+		return record
+	}
+
+	family := binary.LittleEndian.Uint16(decoded[0:2])
+
+	switch family {
+	case syscall.AF_INET:
+		if len(decoded) < 8 {
+			return record
+		}
+
+		record.Family = "inet"
+		record.Port = int(binary.BigEndian.Uint16(decoded[2:4]))
+		record.IP = net.IP(decoded[4:8]).String()
+
+	case syscall.AF_INET6:
+		if len(decoded) < 24 {
+			return record
+		}
+
+		record.Family = "inet6"
+		record.Port = int(binary.BigEndian.Uint16(decoded[2:4]))
+		record.IP = net.IP(decoded[8:24]).String()
+
+	case syscall.AF_UNIX:
+		record.Family = "unix"
+
+		// sockaddr_un에서 2바이트 뒤부터 Unix Socket 경로가 시작된다.
+		if len(decoded) > 2 {
+			socketPath := decoded[2:]
+
+			if nullIndex := bytes.IndexByte(socketPath, 0); nullIndex >= 0 {
+				socketPath = socketPath[:nullIndex]
+			}
+
+			record.IP = string(socketPath)
+		}
+
+	default:
+		record.Family = fmt.Sprintf("unknown(%d)", family)
+	}
+
+	fmt.Printf(
+		"[SOCKADDR Debug] Raw=%s Family=%s IP=%s Port=%d\n",
+		record.RawAddress,
+		record.Family,
+		record.IP,
+		record.Port,
+	)
+
+	return record
 }
 
 //============================================================
@@ -605,4 +664,44 @@ func (c *AuditdCollector) runMapCleanerLoop() {
 			c.mapMutex.Unlock()
 		}
 	}
+}
+
+
+// parseHexField는 key 뒤에서 0~9, a~f, A~F에 해당하는
+// 연속된 16진수 문자만 추출한다.
+//
+// 예:
+// saddr=02001F917F0000010000000000000000SADDR={
+//
+// 반환:
+// 02001F917F0000010000000000000000
+func (c *AuditdCollector) parseHexField(line, key string) string {
+	idx := strings.Index(line, key)
+	if idx == -1 {
+		return ""
+	}
+
+	start := idx + len(key)
+	end := start
+
+	for end < len(line) {
+		ch := line[end]
+
+		isHexDigit :=
+			(ch >= '0' && ch <= '9') ||
+				(ch >= 'a' && ch <= 'f') ||
+				(ch >= 'A' && ch <= 'F')
+
+		if !isHexDigit {
+			break
+		}
+
+		end++
+	}
+
+	if end == start {
+		return ""
+	}
+
+	return line[start:end]
 }
