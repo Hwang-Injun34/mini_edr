@@ -17,35 +17,39 @@ import (
 
 func main() {
 	fmt.Println("==================================================")
-	fmt.Println("        mini-edr 실시간 침해 사고 대응 엔진 가동")
+	fmt.Println("        mini-edr Rule Engine 테스트 모드")
 	fmt.Println("==================================================")
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// 1. 인프라 레이어 셋업 (1, 2단계 수집기)
 	tailEngine := collector.NewTailEngine("/var/log/audit/audit.log")
-	_ = tailEngine.Start()
-	auditCollector := collector.NewAuditdCollector(tailEngine)
-	_ = auditCollector.Start()
+	if err := tailEngine.Start(); err != nil {
+		fmt.Printf("[Err] TailEngine 시작 실패: %v\n", err)
+		return
+	}
 
-	// 2. 가공 레이어 셋업 (3단계 디스패처)
-	eventDispatcher := dispatcher.NewEventDispatcher(auditCollector.ReadyGroups())
+	auditCollector := collector.NewAuditdCollector(tailEngine)
+	if err := auditCollector.Start(); err != nil {
+		fmt.Printf("[Err] AuditdCollector 시작 실패: %v\n", err)
+		return
+	}
+
+	eventDispatcher := dispatcher.NewEventDispatcher(
+		auditCollector.ReadyGroups(),
+	)
 	eventDispatcher.Start(ctx, &wg)
 
-	// 3. 분석 레이어 셋업 및 8대 규칙 로드 (4단계 룰 엔진)
 	ruleEngine := rule.NewRuleEngine()
-	
-	// 실행 중인 main.go 파일의 물리적 절대 경로를 런타임 추적
+
 	_, currentFile, _, _ := runtime.Caller(0)
-	// cmd/agent/main.go 에서 두 단계 위로 올라가 프로젝트 루트 경로 확보
-	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+	projectRoot := filepath.Dir(
+		filepath.Dir(
+			filepath.Dir(currentFile),
+		),
+	)
 	rulesDir := filepath.Join(projectRoot, "rules")
 
-	// 컴파일 타임 샌드박스 경로 확인 로그
-	fmt.Printf("[System] 동적 감지된 규칙 저장소 절대 경로: %s\n", rulesDir)
-
-	// 동적으로 추출된 룰 디렉터리 경로를 기반으로 파일 목록 매핑
 	ruleFiles := []string{
 		filepath.Join(rulesDir, "processCreation.json"),
 		filepath.Join(rulesDir, "fileCreation.json"),
@@ -59,50 +63,129 @@ func main() {
 
 	for _, file := range ruleFiles {
 		if err := ruleEngine.LoadRuleFile(file); err != nil {
-			fmt.Printf("룰 파일 적재 누수 발생 [%s]: %v\n", filepath.Base(file), err)
+			fmt.Printf(
+				"[Rule Load Err] %s: %v\n",
+				filepath.Base(file),
+				err,
+			)
 		}
 	}
 
-	// 4. 파이프라인 결합: [3단계 배출구] ──> [4단계 룰 엔진 입력구] 도킹!
-	ruleEngine.Start(ctx, &wg, eventDispatcher.ParsedEvents())
+	ruleEngine.Start(
+		ctx,
+		&wg,
+		eventDispatcher.ParsedEvents(),
+	)
 
-	// 5. 위협 얼럿 출력 고루틴 백그라운드 구동
+	// 탐지 성공 이벤트 출력
 	go func() {
-		for alertEvent := range ruleEngine.DetectionAlerts() {
-			fmt.Println("\n==================================================")
-			fmt.Printf(" 침해 지표 실시간 탐지 레이더 알림\n")
-			fmt.Printf("├─ 탐지 시그니처: %s\n", alertEvent.AuditKey)
-			fmt.Printf("├─ 침해 원인 프로세스: %s (PID: %d)\n", alertEvent.ProcessName, alertEvent.PID)
-			fmt.Printf("├─ 악성 공격 명령행: %s\n", alertEvent.CommandLine)
-			fmt.Printf("└─ 탐지 매칭 자원 타깃: %s\n", alertEvent.TargetFile)
+		for alert := range ruleEngine.DetectionAlerts() {
+			fmt.Println()
+			fmt.Println("==================================================")
+			fmt.Println("[ALERT] RuleEngine 탐지 성공")
+			fmt.Println("==================================================")
+
+			// --------------------------------
+			// Rule 및 이벤트 메타 정보
+			// --------------------------------
+			fmt.Printf("├─ Rule: %s\n", alert.AuditKey)
+			fmt.Printf("├─ Type: %s\n", alert.Type)
+			fmt.Printf("├─ Event ID: %d\n", alert.ID)
+			fmt.Printf("├─ Event Time: %s\n", alert.Time)
+
+			// --------------------------------
+			// 시스템 콜 정보
+			// --------------------------------
+			fmt.Printf("├─ SyscallName: %s\n", alert.SyscallName)
+			fmt.Printf("├─ Success: %t\n", alert.Success)
+			fmt.Printf("├─ Exit: %d\n", alert.Exit)
+
+			// --------------------------------
+			// 프로세스 정보
+			// --------------------------------
+			fmt.Printf("├─ PID/PPID: %d/%d\n", alert.PID, alert.PPID)
+			fmt.Printf("├─ UID/EUID: %d/%d\n", alert.UID, alert.EUID)
+			fmt.Printf("├─ GID/EGID: %d/%d\n", alert.GID, alert.EGID)
+			fmt.Printf("├─ ProcessName: %s\n", alert.ProcessName)
+			fmt.Printf("├─ Image: %s\n", alert.ImagePath)
+			fmt.Printf("├─ ParentImage: %s\n", alert.ParentImage)
+
+			// --------------------------------
+			// 명령 실행 정보
+			// --------------------------------
+			fmt.Printf("├─ CommandLine: %s\n", alert.CommandLine)
+			fmt.Printf("├─ CurrentDir: %s\n", alert.CurrentDir)
+
+			// --------------------------------
+			// 파일 이벤트 정보
+			// --------------------------------
+			fmt.Printf("├─ TargetFile: %s\n", alert.TargetFile)
+			fmt.Printf("├─ PathName: %s\n", alert.PathName)
+			fmt.Printf("├─ FileExt: %s\n", alert.FileExt)
+
+			// --------------------------------
+			// ProcessAccess 정보
+			// --------------------------------
+			fmt.Printf("├─ Request: %s\n", alert.Request)
+			fmt.Printf("├─ TargetPID: %d\n", alert.TargetPID)
+
+			// --------------------------------
+			// 네트워크 정보
+			// --------------------------------
+			fmt.Printf("├─ DstIP: %s\n", alert.DstIP)
+			fmt.Printf("├─ DstPort: %d\n", alert.DstPort)
+			fmt.Printf("└─ Protocol: %s\n", alert.Protocol)
+
 			fmt.Println("==================================================")
 		}
 	}()
 
-	// 6. 비동기 오류 알림 제어판 도킹 (기존 로직 동일)
+	// 파이프라인 에러 출력
 	go func() {
 		for {
 			select {
-			case err := <-tailEngine.Errors():      if err != nil { fmt.Printf("[Err] %v\n", err) }
-			case err := <-auditCollector.Errors():  if err != nil { fmt.Printf("[Err] %v\n", err) }
-			case err := <-eventDispatcher.Errors(): if err != nil { fmt.Printf("[Err] %v\n", err) }
-			case <-ctx.Done(): return
+			case err := <-tailEngine.Errors():
+				if err != nil {
+					fmt.Printf("[Err] TailEngine: %v\n", err)
+				}
+
+			case err := <-auditCollector.Errors():
+				if err != nil {
+					fmt.Printf("[Err] AuditdCollector: %v\n", err)
+				}
+
+			case err := <-eventDispatcher.Errors():
+				if err != nil {
+					fmt.Printf("[Err] EventDispatcher: %v\n", err)
+				}
+
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	fmt.Println("\n-> 에이전트 분석 파이프라인 완공 완료. 실시간 방어 중...")
+	signal.Notify(
+		sigChan,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+
+	fmt.Println()
+	fmt.Println("-> Rule Engine까지 테스트 중... 종료하려면 Ctrl+C")
+
 	<-sigChan
 
-	// 7. 자원 역순 해제 및 클렌징 종료
-	fmt.Println("\n-> 보안 에이전트 셧다운 절차를 개시합니다...")
+	fmt.Println()
+	fmt.Println("-> 테스트 종료 중...")
+
 	cancel()
 	auditCollector.Stop()
 	tailEngine.Stop()
 	wg.Wait()
+
 	fmt.Println("==================================================")
-	fmt.Println("        mini-edr 에이전트가 안전하게 종료되었습니다.")
+	fmt.Println("        테스트 종료 완료")
 	fmt.Println("==================================================")
 }
