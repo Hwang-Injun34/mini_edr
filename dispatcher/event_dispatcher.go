@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"strconv"
+	"encoding/hex"
 
 	"mini_edr/collector"
 	"mini_edr/model"
@@ -89,12 +91,25 @@ func (d *EventDispatcher) runTransformLoop(ctx context.Context, wg *sync.WaitGro
 // ====================================================================
 // Base Event 생성
 // ====================================================================
-func (d *EventDispatcher) buildBaseEvent(group *collector.AuditLogGroup, sequenceID uint64) *model.SystemEvent {
-	return &model.SystemEvent{
+func (d *EventDispatcher) buildBaseEvent(group *collector.AuditLogGroup, sequenceID uint64,) *model.SystemEvent {
+	event := &model.SystemEvent{
+		// --------------------------------
+		// 공통 메타 정보
+		// --------------------------------
 		ID:       sequenceID,
 		Time:     time.Now(),
 		AuditKey: group.Key,
 
+		// --------------------------------
+		// 시스템 콜 정보
+		// --------------------------------
+		SyscallName: group.Syscall.SyscallName,
+		Success:     group.Syscall.Success,
+		Exit:        group.Syscall.Exit,
+
+		// --------------------------------
+		// 프로세스 및 사용자 정보
+		// --------------------------------
 		PID:  group.Syscall.PID,
 		PPID: group.Syscall.PPID,
 
@@ -103,11 +118,17 @@ func (d *EventDispatcher) buildBaseEvent(group *collector.AuditLogGroup, sequenc
 		GID:  group.Syscall.GID,
 		EGID: group.Syscall.EGID,
 
-		ImagePath:   group.Syscall.Exe,
 		ProcessName: d.extractProcessName(group.Syscall.Exe),
+		ImagePath:   group.Syscall.Exe,
 		ParentImage: d.resolveProcessExe(group.Syscall.PPID),
-
 	}
+
+	// CWD는 이벤트에 따라 누락될 수 있으므로 nil 검사 후 저장한다.
+	if group.Cwd != nil {
+		event.CurrentDir = group.Cwd.Directory
+	}
+
+	return event
 }
 
 // ====================================================================
@@ -155,19 +176,14 @@ func (d *EventDispatcher) enrichEventByKey(event *model.SystemEvent, group *coll
 func (d *EventDispatcher) enrichProcessCreate(event *model.SystemEvent, group *collector.AuditLogGroup) {
 	event.Type = collector.ProcessCreate
 	event.CommandLine = d.cleanCommandLine(group.Execve)
-
-	if group.Cwd != nil {
-		event.RawMessage = fmt.Sprintf("CWD=%s", group.Cwd.Directory)
-	}
 }
+
 
 func (d *EventDispatcher) enrichFileEvent(event *model.SystemEvent, group *collector.AuditLogGroup) {
 	event.CommandLine = d.cleanCommandLine(group.Execve)
+	// PATH 레코드에서 대상 경로, 파일명, 확장자를 채움
 	d.bindPathFields(event, group)
 
-	if group.Cwd != nil {
-		event.RawMessage = fmt.Sprintf("CWD=%s", group.Cwd.Directory)
-	}
 }
 
 func (d *EventDispatcher) enrichNetworkConnect(event *model.SystemEvent, group *collector.AuditLogGroup) {
@@ -189,22 +205,29 @@ func (d *EventDispatcher) enrichPersistence(event *model.SystemEvent, group *col
 	event.Type = collector.Persistence
 	event.CommandLine = d.cleanCommandLine(group.Execve)
 	d.bindPathFields(event, group)
-
-	if group.Cwd != nil {
-		event.RawMessage = fmt.Sprintf("CWD=%s", group.Cwd.Directory)
-	}
 }
 
 func (d *EventDispatcher) enrichPrivilegeEscalation(event *model.SystemEvent, group *collector.AuditLogGroup) {
 	event.Type = collector.PrivilegeEscalation
 	event.CommandLine = d.cleanCommandLine(group.Execve)
+
+	if event.CommandLine == "" && group.ProcTitle != nil {
+		event.CommandLine = d.decodeProcTitle(group.ProcTitle.Title)
+	}
 }
 
 func (d *EventDispatcher) enrichProcessAccess(event *model.SystemEvent, group *collector.AuditLogGroup) {
 	event.Type = collector.ProcessAccess
 
+	// ptrace(request, pid, addr, data)
+	// a0 = request
 	if len(group.Syscall.Args) > 0 {
 		event.Request = d.ptraceRequestName(group.Syscall.Args[0])
+	}
+
+	// a1 = 접근 대상 PID
+	if len(group.Syscall.Args) > 1 {
+		event.TargetPID = d.parseSyscallPID(group.Syscall.Args[1])
 	}
 
 	if group.ProcTitle != nil {
@@ -218,15 +241,14 @@ func (d *EventDispatcher) enrichProcessAccess(event *model.SystemEvent, group *c
 // ====================================================================
 
 func (d *EventDispatcher) bindPathFields(event *model.SystemEvent, group *collector.AuditLogGroup) {
-	if len(group.Paths) == 0 || group.Paths[0] == nil {
+	targetPath := d.selectTargetPath(event.Type, group.Paths)
+	if targetPath == nil {
 		return
 	}
 
-	path := group.Paths[0].Name
-
-	event.TargetFile = path
-	event.PathName = path
-	event.FileExt = filepath.Ext(path)
+	event.TargetFile = targetPath.Name
+	event.PathName = targetPath.Name
+	event.FileExt = filepath.Ext(targetPath.Name)
 }
 
 
@@ -315,6 +337,28 @@ func (d *EventDispatcher) ptraceRequestName(a0 string) string {
 	}
 }
 
+func (d *EventDispatcher) parseSyscallPID(value string) int {
+	if value == "" {
+		return 0
+	}
+
+	// auditd의 a1 값이 10진수로 들어오는 경우
+	pid, err := strconv.Atoi(value)
+	if err == nil {
+		return pid
+	}
+
+	// 0x 접두사가 있는 16진수 값
+	if strings.HasPrefix(strings.ToLower(value), "0x") {
+		n, err := strconv.ParseInt(value[2:], 16, 64)
+		if err == nil {
+			return int(n)
+		}
+	}
+
+	return 0
+}
+
 func (d *EventDispatcher) reportError(stage collector.PipelineStage, comp string, err error, detail string) {
 	select {
 	case d.errChan <- &collector.EDRError{
@@ -329,3 +373,78 @@ func (d *EventDispatcher) reportError(stage collector.PipelineStage, comp string
 }
 
 	
+func (d *EventDispatcher) selectTargetPath(
+	eventType collector.EventType,
+	paths []*collector.PathRecord,
+) *collector.PathRecord {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	// 이벤트 유형에 따라 가장 우선적으로 선택할 nametype
+	preferredNameType := ""
+
+	switch eventType {
+	case collector.FileCreate:
+		preferredNameType = "CREATE"
+
+	case collector.FileDelete:
+		preferredNameType = "DELETE"
+
+	case collector.Persistence:
+		// Audit watch 기반 수정 이벤트는 CREATE가 아니라 NORMAL로 들어올 수도 있다.
+		preferredNameType = "NORMAL"
+
+	case collector.ShadowAccess, collector.PasswordAccess:
+		preferredNameType = "NORMAL"
+	}
+
+	// 1순위: 이벤트에 맞는 nametype 선택
+	if preferredNameType != "" {
+		for _, path := range paths {
+			if path == nil {
+				continue
+			}
+
+			if strings.EqualFold(path.NameType, preferredNameType) {
+				return path
+			}
+		}
+	}
+
+	// 2순위: PARENT가 아닌 실제 대상 경로 선택
+	for _, path := range paths {
+		if path == nil {
+			continue
+		}
+
+		if !strings.EqualFold(path.NameType, "PARENT") && path.Name != "" {
+			return path
+		}
+	}
+
+	// 마지막 fallback
+	for _, path := range paths {
+		if path != nil && path.Name != "" {
+			return path
+		}
+	}
+
+	return nil
+}
+
+
+func (d *EventDispatcher) decodeProcTitle(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	decoded, err := hex.DecodeString(value)
+	if err != nil {
+		return value
+	}
+
+	// PROCTITLE은 인자 사이를 NULL 문자로 구분한다.
+	result := strings.ReplaceAll(string(decoded), "\x00", " ")
+	return strings.TrimSpace(result)
+}
