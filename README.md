@@ -19,7 +19,7 @@
    - MITRE ATT&CK를 참고한 행위 기반 탐지 규칙 8개 구현
 
 📄 **PDF 문서**  
-- [Mini-EDR 통합 보고서](https://github.com/Hwang-Injun34/elasticsearch_notes/blob/main/Politi-Search_%E1%84%90%E1%85%A9%E1%86%BC%E1%84%92%E1%85%A1%E1%86%B8_%E1%84%87%E1%85%A9%E1%84%80%E1%85%A9%E1%84%89%E1%85%A5_%E1%84%82%E1%85%A1%E1%86%B7%E1%84%80%E1%85%AE%E1%86%BC%E1%84%86%E1%85%A7%E1%86%BC%E1%84%89%E1%85%AE.pdf)
+- [Mini-EDR 통합 보고서](https://github.com/Hwang-Injun34/mini_edr/blob/main/Mini-EDR%20Agent_%E1%84%82%E1%85%A1%E1%86%B7%E1%84%80%E1%85%AE%E1%86%BC%E1%84%86%E1%85%A7%E1%86%BC%E1%84%89%E1%85%AE.pdf)
 
 ▶️ **시연 영상**  
 - [시연 영상]()
